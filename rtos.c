@@ -125,7 +125,7 @@ uint8_t taskCount = 0;          // total number of valid tasks
 uint32_t heap[MAX_TASKS][256];
 uint32_t heapShell[1024];
 uint8_t svcNum;
-uint8_t preemption;
+uint8_t preemption = 0;
 uint8_t prio = 1;
 uint32_t tau;
 uint32_t pn;
@@ -425,22 +425,20 @@ void systickIsr(void)
     {
         NVIC_INT_CTRL_R = 0x10000000;
     }
-    else
-    {
         uint8_t i;
         for(i=0;i<MAX_TASKS;i++)
         {
             if(tcb[i].state == STATE_DELAYED)
             {
-                tcb[i].ticks--;
-                if(tcb[i].ticks == 0)
+                if(tcb[i].ticks>0)
+                    tcb[i].ticks--;
+                else if(tcb[i].ticks == 0)
                 {
                     tcb[i].state = STATE_READY;
                 }
             }
 
         }
-    }
 }
 
 // REQUIRED: in coop and preemptive, modify this function to add support for task switching
