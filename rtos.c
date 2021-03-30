@@ -122,11 +122,12 @@ char strg[MAX_CHARS + 1], out[30][30];
 uint8_t pos[MAX_CHARS], argCount, argString, argNum, count;
 uint8_t taskCurrent = 0;        // index of last dispatched task
 uint8_t taskCount = 0;          // total number of valid tasks
-uint32_t heap[MAX_TASKS][256];
-uint32_t heapShell[1024];
 uint8_t svcNum;
 uint8_t preemption = 0;
 uint8_t prio = 1;
+uint8_t priorityInherit = 0;
+uint32_t heap[MAX_TASKS][256];
+uint32_t heapShell[1024];
 uint32_t tau;
 uint32_t pn;
 uint32_t startTime, stopTime;
@@ -412,14 +413,14 @@ void post(int8_t semaphore)
 // REQUIRED: in preemptive code, add code to request task switch
 void systickIsr(void)
 {
-    /*uint8_t j;
+    uint8_t j;
     for(j=0;j<MAX_TASKS;j++)
     {
         tau += tcb[j].time;
     }
     pn += ((tcb[taskCurrent].time) * 10000)/tau;
-    tcb[taskCurrent].percentCPUint = (pn/1000)%100;
-    tcb[taskCurrent].percentCPUfra = pn%100;*/
+    tcb[taskCurrent].percentCPUint = (pn/1000);
+    tcb[taskCurrent].percentCPUfra = pn%100;
 
     if(preemption == 1 && taskCurrent != 0)
     {
@@ -448,12 +449,12 @@ void pendSvIsr(void)
     pushRegs();
     tcb[taskCurrent].sp = getPsp();
 
-    /*stopTime = TIMER1_TAV_R;
+    stopTime = TIMER1_TAV_R;
     TIMER1_CTL_R &= ~TIMER_CTL_TAEN;
     TIMER1_TAV_R = 0;
 
     tcb[taskCurrent].deltaTime = stopTime - startTime;
-    tcb[taskCurrent].time += tcb[taskCurrent].deltaTime;*/
+    tcb[taskCurrent].time += tcb[taskCurrent].deltaTime;
 
     taskCurrent = rtosScheduler();
 
@@ -518,6 +519,20 @@ void svCallIsr(void)
                 tcb[taskCurrent].state = STATE_BLOCKED;
                 semaphores[r0].processQueue[semaphores[r0].queueSize] = (uint32_t)tcb[taskCurrent].pid;
                 semaphores[r0].queueSize++;
+                if(priorityInherit == 1)
+                {
+                    uint8_t i;
+                    for(i=0;i<MAX_TASKS;i++)
+                    {
+                        if(tcb[i].semaphore == tcb[taskCurrent].semaphore)
+                        {
+                            if(tcb[i].currentPriority > tcb[taskCurrent].currentPriority)
+                            {
+                                tcb[i].currentPriority = tcb[taskCurrent].currentPriority;
+                            }
+                        }
+                    }
+                }
                 NVIC_INT_CTRL_R = 0x10000000;
             }
             break;
@@ -527,6 +542,7 @@ void svCallIsr(void)
         {
             uint8_t i,j;
             semaphores[r0].count++;
+            tcb[taskCurrent].currentPriority = tcb[taskCurrent].currentPriority;
             if(semaphores[r0].queueSize > 0)
             {
                 semaphores[r0].count--;
@@ -1135,6 +1151,7 @@ void shell(void)
             putsUart0("fn_name &:           Restart a thread\r\n");
             putsUart0("sched PRIO/RR:       PRIO -> Priority Scheduler | RR -> Round-robin Scheduler  \r\n");
             putsUart0("preemption ON/OFF:   ON -> Preemeption ON | OFF -> Preemption OFF \r\n");
+            putsUart0("pi ON/OFF:           ON-> Priority Inheritance ON | OFF-> Priority Inheritance OFF");
         }
         else if(isCommand("reboot",0))
         {
@@ -1254,10 +1271,10 @@ void shell(void)
             putsUart0("\r\n");
             uint8_t i;
             char a[30],d[100];
-            //char b[30],c[30];
+            char b[30],c[30];
             putsUart0("PID \t");
             putsUart0("STATE \t\t");
-            //putsUart0("%CPU USE \t");
+            putsUart0("%CPU USE \t");
             putsUart0("&SP \t\t");
             putsUart0("THREAD NAME");
             putsUart0("\r\n");
@@ -1288,13 +1305,13 @@ void shell(void)
                     putsUart0("BLOCKED");
                 }
                 putsUart0("\t\t");
-                /*itoa(tcb[i].percentCPUint,b);
+                itoa(tcb[i].percentCPUint,b);
                 itoa(tcb[i].percentCPUfra,c);
                 putsUart0(b);
                 putsUart0(".");
                 putsUart0(c);
                 putsUart0("%");
-                putsUart0("\t\t");*/
+                putsUart0("\t\t");
                 decToHexa((long)tcb[i].sp,d);
                 putsUart0("0x");
                 putsUart0(d);
@@ -1302,6 +1319,22 @@ void shell(void)
                 putsUart0(tcb[i].name);
             }
             putsUart0("\r\n");
+        }
+        else if(isCommand("pi",1))
+        {
+            uint8_t c,v;
+            c = strcompare(&strg[pos[1]],"ON");
+            v = strcompare(&strg[pos[1]],"OFF");
+            if(c == 0)
+            {
+                priorityInherit = 1;
+                putsUart0("Priority Inheritance ON \r\n");
+            }
+            else if(v == 0)
+            {
+                priorityInherit = 0;
+                putsUart0("Priority Inheritance OFF \r\n");
+            }
         }
         else
         {
